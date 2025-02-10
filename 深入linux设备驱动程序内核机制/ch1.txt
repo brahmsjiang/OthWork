@@ -1,0 +1,12 @@
+
+
+
+
+
+名称字符串表的section的基地址
+char* secstrings = (char*)hdr + entry[hdr->e_shstrndx].sh_offset
+
+符号名称字符串表的section的基地址
+char* strtab = (char*)hdr + entry[entry[i].sh_link].sh_offset
+
+某一section的名称
