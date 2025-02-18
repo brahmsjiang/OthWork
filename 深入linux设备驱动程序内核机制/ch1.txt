@@ -21,10 +21,39 @@ BSS段的大小从可执行文件中得到，然后链接器得到这个大小�
 
 
 
+“链接器为目标文件分配地址和空间”这句话中的“地址和空间”其实有两个含义
+：
+第一个是在输出的可执行文件中的空间；
+第二个是在装载后的虚拟地址中的虚拟地址空间。比如“.text”和“ .data”来说，它们在文件中和虚拟地址中都要分配空 间，因为它们在这两者中都存在；而对于“.bss”这样的段来说，分配空间的意义只局限于 虚拟地址空间
 
 
 
 
 
+struct load_info {
+	Elf_Ehdr *hdr;
+	Elf_Shdr *sechdrs;
+	char *secstrings, *strtab;
+	unsigned long symoffs, stroffs;
+	struct {
+		unsigned int sym, str, mod, vers, info, pcpu;
+	} index;
+};
+
+apply_relocate(info->sechdrs, info->strtab,
+info->index.sym, i, mod)
+
+-----
+/* This is where to make the change */
+location = (void *)sechdrs[sechdrs[relsec].sh_info].sh_addr
+	+ rel[i].r_offset;
+	
+/* This is the symbol it is referring to.  Note that all
+   undefined symbols have been resolved.  */
+sym = (Elf32_Sym *)sechdrs[symindex].sh_addr
+	+ ELF32_R_SYM(rel[i].r_info);
+			
+			
+*location += sym->st_value;
 
 
