@@ -3,6 +3,25 @@
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 名称字符串表的section的基地址
 char* secstrings = (char*)hdr + entry[hdr->e_shstrndx].sh_offset
 
@@ -37,23 +56,74 @@ struct load_info {
 	unsigned long symoffs, stroffs;
 	struct {
 		unsigned int sym, str, mod, vers, info, pcpu;
-	} index;
+	} index;	//sym：符号表索引，str：字符串表索引, mod：模块索引
 };
 
-apply_relocate(info->sechdrs, info->strtab,
-info->index.sym, i, mod)
+typedef struct elf32_sym{
+  Elf32_Word	st_name;	//符号名
+  Elf32_Addr	st_value;	//符号值，即是函数或变量的地址
+  Elf32_Word	st_size;
+  unsigned char	st_info;
+  unsigned char	st_other;
+  Elf32_Half	st_shndx;
+} Elf32_Sym;
 
------
-/* This is where to make the change */
-location = (void *)sechdrs[sechdrs[relsec].sh_info].sh_addr
-	+ rel[i].r_offset;
+typedef struct elf32_rel {
+	ELf32_Addr r_offset;	//需要重定位的位置，是从需要重定位的符号所在section的头部开始到将被重定位的位置之间的字节偏移
+	Elf32_Word r_info;	//需要重定位的符号的符号表索引，以及相应的重定位类型
+} Elf32_Rel;
+
+----------
+
+static int apply_relocations(struct module *mod, const struct load_info *info)
 	
-/* This is the symbol it is referring to.  Note that all
-   undefined symbols have been resolved.  */
-sym = (Elf32_Sym *)sechdrs[symindex].sh_addr
-	+ ELF32_R_SYM(rel[i].r_info);
+	for (i = 1; i < info->hdr->e_shnum; i++) {	//遍历sectionHeaderTable的所有entry
+	
+		unsigned int infosec = info->sechdrs[i].sh_info;
+		if (info->sechdrs[i].sh_type == SHT_REL) {	//sh_type=SHT_REL section，调用apply_relocate函数来重定位
+				apply_relocate(info->sechdrs, info->strtab, info->index.sym, i, mod);
 			
-			
-*location += sym->st_value;
+				Elf32_Rel *rel = (void *)sechdrs[relsec].sh_addr;	//当前entry对应section的虚拟地址， relsec即是上面传入的ii
+				for (i = 0; i < sechdrs[relsec].sh_size / sizeof(*rel); i++) {	//relocation section由几个Elf32_Rel构成
+				
+					/* This is where to make the change */
+					location = (void *)sechdrs[sechdrs[i].sh_info].sh_addr + rel[i].r_offset;
+					//当前relocation section entry的sh_info意为被重定位的section对应在sectionHeaderTable的索引值
+					//location=被重定位的section的虚拟基地址+当前relocation section的偏移值
+						
+					/* This is the symbol it is referring to.  Note that all undefined symbols have been resolved.  */
+					sym = (Elf32_Sym *)sechdrs[info->index.sym].sh_addr + ELF32_R_SYM(rel[i].r_info);
+					//ELF32_Sym对应一个符号, sym就是指涉符号的虚拟地址; ELF32_R_SYM(x)即为((x) >> 8)
+								
+								
+					*location += sym->st_value;	//st_value为符号在内核中的虚拟地址
+				}
+
+----------
+
+struct kernel_param {
+	const char *name;		//参数名
+	const struct kernel_param_ops *ops;
+	u16 perm;	//对sys文件系统中模块参数的访问许可
+	s16 level;
+	union {		//指向参数的指针
+		void *arg;
+		const struct kparam_string *str;
+		const struct kparam_array *arr;
+	};
+};
+
+struct kernel_param_ops {		//成员函数（set和get）用来在模块mod的args成员和模块的参数section间拷贝数据
+	/* How the ops should behave */
+	unsigned int flags;
+	/* Returns 0, or -errno.  arg is in kp->arg. */
+	int (*set)(const char *val, const struct kernel_param *kp);
+	/* Returns length written or -errno.  Buffer is 4k (ie. be short!) */
+	int (*get)(char *buffer, const struct kernel_param *kp);
+	/* Optional function to free kp->arg when module unloaded. */
+	void (*free)(void *arg);
+};
+
+
 
 
